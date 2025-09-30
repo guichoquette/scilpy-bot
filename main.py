@@ -1,8 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-This script provides an interactive chat interface using Gemini or ChatGPT
-with context from scilpy documentation.
+This script first verifies if you have scilpy installed on your machine.
+Then it checks if there are any files in .scilpy/.hidden (doc).
+It does not update the documentation, you have to manually do it.
+It then validates if there is at least one LLM available between Gemini and
+OpenAI. To be valid, you need the dependency installed with a valid API key.
+
+For Gemini :
+    pip install google.generativeai
+    https://aistudio.google.com/app/api-keys
+    export GOOGLE_API_KEY="<your_key>"
+
+For ChatGPT :
+    pip install openai
+    https://platform.openai.com/api-keys
+    export OPENAI_API_KEY="<your_key>"
+
+If you have free versions of them, you might get an error explaining you have
+reached the daily limit. Just try again after the time delay specified.
 """
 import os
 import argparse
