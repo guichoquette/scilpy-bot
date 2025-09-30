@@ -14,6 +14,11 @@ if importlib.util.find_spec("scilpy") is None:
 
 from scilpy import SCILPY_HOME
 
+#Suppress any warnings from Gemini's internal system
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["GRPC_VERBOSITY"] = "NONE"
+os.environ["GRPC_ABORT_ON_LEAKS"] = "0"
+
 # Try to import OpenAI
 try:
     from openai import OpenAI
@@ -126,17 +131,26 @@ def chat_loop(model_name, context):
         chat_session = model.start_chat(history=[])
         # Send context as first message
         print("Initializing chat with documentation context...")
-        chat_session.send_message(f"You are a helpful assistant for scilpy, a Python library for diffusion MRI \
-                                   processing. Here is the documentation context that you should use to answer \
-                                   questions:\n\n{context}\n\nPlease do not refer scripts that don't exist. Do \
-                                   not write your responses in markdown because the user will read you in a    \
-                                   terminal. If you write scripts name, please do not include the .py file     \
-                                   extension.")
+        pre_prompt = """You are a research assistant and an expert in a Python library called scilpy, which is used 
+                        for diffusion MRI processing. Your primary goal is to help new users discover and understand 
+                        the tools available in this library.
+
+        Please adhere to the following guidelines:
+        - Base all your answers on the provided scilpy documentation context.
+        - Be rigorous, concise, and ensure your answers are easy to understand for users who may be new to the field.
+        - Do NOT use markdown formatting (e.g., bolding, lists), as the output is displayed in a terminal.
+
+        The user's questions will follow.
+        """
+
+        chat_session.send_message(f"{pre_prompt}\n\nHere is the documentation context that you should use to answer \
+                                   questions:\n\n{context}\n\n If you write scripts \
+                                   name, please do not include the .py file extension.")
         print("Context loaded into conversation memory.\n")
     
     while True:
         try:
-            user_input = input(f"{BLUE}\nYou:{RESET} ").strip()
+            user_input = input(f"\nYOU: {BLUE}").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nExiting...")
             break
@@ -159,7 +173,7 @@ def chat_loop(model_name, context):
         else:
             reply = "Error: Unknown model"
         
-        print(f"\n{model_name.upper()}: {GREEN}{reply}{RESET}")
+        print(f"{RESET}\n{model_name.upper()}: {GREEN}{reply}{RESET}")
 
 
 def main():
