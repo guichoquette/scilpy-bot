@@ -24,7 +24,6 @@ try:
     else:
         client = None
 except ImportError:
-    print("Warning: openai library not installed. Fix : pip install openai")
     openai_available = False
     client = None
 
@@ -38,9 +37,13 @@ try:
     else:
         gemini_available = False
 except ImportError:
-    print("Warning: google-generativeai library not installed. Fix : pip install google.generativeai")
     gemini_available = False
 
+RED = "\033[91m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+RESET = "\033[0m"
 
 def build_arg_parser():
     """Build argument parser."""
@@ -67,8 +70,8 @@ def load_context(doc_path):
     return context
 
 
-def ask_gpt(prompt):
-    """Send prompt to OpenAI GPT and return the response."""
+def ask_gpt(user_input, context, conversation_history):
+    """Send prompt to OpenAI GPT with conversation history."""
     if not openai_available:
         return "Error: OpenAI library not installed."
     
@@ -76,39 +79,64 @@ def ask_gpt(prompt):
         return "Error: OPENAI_API_KEY not set in environment."
     
     try:
+        # Build messages with system context and conversation history
+        messages = [
+            {"role": "system", "content": f"You are a helpful assistant for scilpy, a Python library for diffusion MRI processing. Here is the documentation context:\n\n{context}"}
+        ]
+        
+        # Add conversation history
+        messages.extend(conversation_history)
+        
+        # Add current user message
+        messages.append({"role": "user", "content": user_input})
+        
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant for scilpy, a Python library for diffusion MRI processing."},
-                {"role": "user", "content": prompt}
-            ]
+            messages=messages
         )
         return response.choices[0].message.content
     except Exception as e:
         return f"Error calling OpenAI API: {e}"
 
 
-def ask_gemini(prompt):
-    """Send prompt to Google Gemini and return the response."""
+def ask_gemini(user_input, context, chat_session):
+    """Send prompt to Google Gemini using chat session."""
     if not gemini_available:
         return "Error: google-generativeai library not installed or GOOGLE_API_KEY not set."
     
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        response = model.generate_content(prompt)
+        response = chat_session.send_message(user_input)
         return response.text
     except Exception as e:
         return f"Error calling Gemini API: {e}"
 
 
 def chat_loop(model_name, context):
-    """Interactive chat loop."""
+    """Interactive chat loop with conversation memory."""
     print(f"Starting {model_name} chat. Type 'exit' or 'quit' to end the session.")
     print("-" * 60)
     
+    # Initialize conversation memory
+    if model_name == "chatgpt":
+        # For ChatGPT, we maintain a list of message dictionaries
+        conversation_history = []
+    elif model_name == "gemini":
+        # For Gemini, we create a chat session with initial context
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        chat_session = model.start_chat(history=[])
+        # Send context as first message
+        print("Initializing chat with documentation context...")
+        chat_session.send_message(f"You are a helpful assistant for scilpy, a Python library for diffusion MRI \
+                                   processing. Here is the documentation context that you should use to answer \
+                                   questions:\n\n{context}\n\nPlease do not refer scripts that don't exist. Do \
+                                   not write your responses in markdown because the user will read you in a    \
+                                   terminal. If you write scripts name, please do not include the .py file     \
+                                   extension.")
+        print("Context loaded into conversation memory.\n")
+    
     while True:
         try:
-            user_input = input("\nYou: ").strip()
+            user_input = input(f"{BLUE}\nYou:{RESET} ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nExiting...")
             break
@@ -120,23 +148,18 @@ def chat_loop(model_name, context):
             print("Goodbye!")
             break
         
-        # Build prompt with context
-        prompt = f"""Context (scilpy documentation):
-{context}
-
-User question: {user_input}
-
-Please answer based on the context provided above."""
-        
-        # Get response from selected model
+        # Get response from selected model with conversation memory
         if model_name == "chatgpt":
-            reply = ask_gpt(prompt)
+            reply = ask_gpt(user_input, context, conversation_history)
+            # Add to conversation history
+            conversation_history.append({"role": "user", "content": user_input})
+            conversation_history.append({"role": "assistant", "content": reply})
         elif model_name == "gemini":
-            reply = ask_gemini(prompt)
+            reply = ask_gemini(user_input, context, chat_session)
         else:
             reply = "Error: Unknown model"
         
-        print(f"\n{model_name.upper()}: {reply}")
+        print(f"\n{model_name.upper()}: {GREEN}{reply}{RESET}")
 
 
 def main():
@@ -148,18 +171,17 @@ def main():
     if args.chatgpt:
         model = "chatgpt"
         if not openai_available or client is None:
-            print("Error: ChatGPT is not available. Install openai library and set OPENAI_API_KEY.")
+            print("Error: ChatGPT is not available. pip install openai and set OPENAI_API_KEY.")
             exit(1)
     elif args.gemini:
         model = "gemini"
         if not gemini_available:
-            print("Error: Gemini is not available. Install google-generativeai library and set GOOGLE_API_KEY.")
+            print("Error: Gemini is not available. pip install google.generativeai and set GOOGLE_API_KEY.")
             exit(1)
     else:
         # Default to gemini
         model = "gemini"
         if not gemini_available:
-            print("Warning: Gemini not available, trying ChatGPT...")
             if openai_available and client:
                 model = "chatgpt"
             else:
@@ -171,12 +193,12 @@ def main():
     
     if not os.path.exists(doc_path):
         print("Error: scilpy doc not generated.")
-        print("Enter this command in the terminal: scil_search_keywords --r hello")
+        print("Enter this command in the terminal: scil_search_keywords --regenerate_help_files placeholder")
         exit(1)
     
     if not any(os.path.isfile(os.path.join(doc_path, f)) for f in os.listdir(doc_path)):
         print("Error: scilpy doc directory is empty.")
-        print("Enter this command in the terminal: scil_search_keywords --r hello")
+        print("Enter this command in the terminal: scil_search_keywords --regenerate_help_files placeholder")
         exit(1)
     
     # Load context and start chat
