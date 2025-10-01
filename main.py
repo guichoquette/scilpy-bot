@@ -20,15 +20,15 @@ For ChatGPT :
 If you have free versions of them, you might get an error explaining you have
 reached the daily limit. Just try again after the time delay specified.
 """
+
 import os
 import argparse
-import importlib.util
+import logging
 
-if importlib.util.find_spec("scilpy") is None:
-    print("Error: scilpy is not installed.")
-    exit(1)
-
-from scilpy import SCILPY_HOME
+try:
+    from scilpy import SCILPY_HOME
+except ImportError:
+    raise ImportError("scilpy is not installed.")
 
 # Suppress any warnings from Gemini's internal system
 # Has to be before the import of google.generativeai
@@ -91,17 +91,17 @@ def load_context(doc_path):
                 with open(file_path, 'r', encoding='utf-8') as fd:
                     context += fd.read() + "\n"
             except Exception as e:
-                print(f"Warning: Could not read {file_path}: {e}")
+                logging.warning(f"Could not read {file_path}: {e}")
     return context
 
 
 def ask_gpt(user_input, context, conversation_history):
     """Send prompt to OpenAI GPT with conversation history."""
     if not openai_available:
-        return "Error: OpenAI library not installed."
+        raise ImportError("Error: OpenAI library not installed.")
 
     if client is None:
-        return "Error: OPENAI_API_KEY not set in environment."
+        raise EnvironmentError("OPENAI_API_KEY not set in environment.")
 
     try:
         # Build messages with system context and conversation history
@@ -123,26 +123,30 @@ def ask_gpt(user_input, context, conversation_history):
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error calling OpenAI API: {e}"
+        raise ConnectionError(f"Could not call OpenAI API: {e}")
 
 
 def ask_gemini(user_input, context, chat_session):
     """Send prompt to Google Gemini using chat session."""
     if not gemini_available:
-        return "Error: google-generativeai library not installed \
-                or GOOGLE_API_KEY not set."
+        raise EnvironmentError("google-generativeai library not "
+                               "installed or GOOGLE_API_KEY not set.")
 
     try:
         response = chat_session.send_message(user_input)
         return response.text
+    except ConnectionError as e:
+        raise ConnectionError(f"Could not call Gemini API: {e}")
+    # This global exception is to make sure the chat does not stop if we reach
+    # the per-minute limit. Will trigger if we answer during the first minute.
     except Exception as e:
         return f"Error calling Gemini API: {e}"
 
 
 def chat_loop(model_name, context):
     """Interactive chat loop with conversation memory."""
-    print(f"Starting {model_name} chat. Type 'exit' or 'quit' \
-           to end the session.")
+    print(f"Starting {model_name} chat. Type 'exit' or 'quit' "
+           "to end the session.")
     print("-" * 60)
 
     # Initialize conversation memory
@@ -156,23 +160,23 @@ def chat_loop(model_name, context):
         # Send context as first message
         print("Initializing chat with documentation context...")
         pre_prompt = """
-            You are a research assistant and an expert in a Python library \
-            called scilpy, which is used for diffusion MRI processing. Your \
-            primary goal is to help new users discover and understand the \
+            You are a research assistant and an expert in a Python library
+            called scilpy, which is used for diffusion MRI processing. Your
+            primary goal is to help new users discover and understand the
             tools available in this library.
 
         Please adhere to the following guidelines:
         - Base all your answers on the provided scilpy documentation context.
-        - Be rigorous, concise, and ensure your answers are easy to \
+        - Be rigorous, concise, and ensure your answers are easy to
           understand for users who may be new to the field.
-        - Do NOT use markdown formatting (e.g., bolding, lists), as the \
+        - Do NOT use markdown formatting (e.g., bolding, lists), as the
           output is displayed in a terminal.
 
         The user's questions will follow.
         """
 
         context_introduction = f"{pre_prompt}\n\nHere is the documentation \
-            context that you should use to answer questions:\
+            context that you should use to answer questions: \
             \n\n{context}\n\n If you write scripts name, please do not \
             include the .py file extension."
 
@@ -206,7 +210,7 @@ def chat_loop(model_name, context):
         elif model_name == "gemini":
             reply = ask_gemini(user_input, context, chat_session)
         else:
-            reply = "Error: Unknown model"
+            raise ValueError("Unknown model")
 
         print(f"{RESET}\n{model_name.upper()}: {GREEN}{reply}{RESET}")
 
@@ -220,15 +224,13 @@ def main():
     if args.chatgpt:
         model = "chatgpt"
         if not openai_available or client is None:
-            print("Error: ChatGPT is not available. pip install openai \
-                   and set OPENAI_API_KEY.")
-            exit(1)
+            raise ImportError("ChatGPT is not available. pip install "
+                              "openai and set OPENAI_API_KEY.")
     elif args.gemini:
         model = "gemini"
         if not gemini_available:
-            print("Error: Gemini is not available. pip install \
-                   google.generativeai and set GOOGLE_API_KEY.")
-            exit(1)
+            raise ImportError("Gemini is not available. pip install "
+                              "google.generativeai and set GOOGLE_API_KEY.")
     else:
         # Default to gemini
         model = "gemini"
@@ -236,26 +238,25 @@ def main():
             if openai_available and client:
                 model = "chatgpt"
             else:
-                print("Error: No AI models available. Install required \
-                      libraries and set API keys.")
-                exit(1)
+                raise ImportError("No AI models available. Install "
+                                  "required libraries and set API keys.")
 
     # Load documentation context
     doc_path = os.path.join(SCILPY_HOME, '.hidden')
 
     if not os.path.exists(doc_path):
-        print("Error: scilpy doc not generated.")
-        print("Enter this command in the terminal: scil_search_keywords \
-               --regenerate_help_files placeholder")
-        exit(1)
+        raise FileNotFoundError("scilpy doc not generated. "
+                                "Enter this command in the terminal: "
+                                "scil_search_keywords --regenerate_help_files"
+                                " placeholder")
 
     if not any(
         os.path.isfile(os.path.join(doc_path, f)) for f in os.listdir(doc_path)
     ):
-        print("Error: scilpy doc directory is empty.")
-        print("Enter this command in the terminal: scil_search_keywords \
-               --regenerate_help_files placeholder")
-        exit(1)
+        raise FileNotFoundError("scilpy doc directory is empty. "
+                                "Enter this command in the terminal: "
+                                "scil_search_keywords --regenerate_help_files"
+                                " placeholder")
 
     # Load context and start chat
     print("Loading documentation context...")
