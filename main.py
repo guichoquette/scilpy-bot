@@ -146,7 +146,7 @@ def ask_gemini(user_input, context, chat_session):
 def chat_loop(model_name, context):
     """Interactive chat loop with conversation memory."""
     print(f"Starting {model_name} chat. Type 'exit' or 'quit' "
-           "to end the session.")
+          "to end the session.")
     print("-" * 60)
 
     # Initialize conversation memory
