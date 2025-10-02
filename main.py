@@ -53,7 +53,7 @@ except ImportError:
 try:
     import google.generativeai as genai
     gemini_available = True
-    gemini_api_key = os.environ.get("GOOGLE_API_KEY")
+    gemini_api_key = os.environ.get("GOOGLE_API_KEY") if os.environ.get("GOOGLE_API_KEY") else os.environ.get("GEMINI_API_KEY")
     if gemini_api_key:
         genai.configure(api_key=gemini_api_key)
     else:
